@@ -1,46 +1,84 @@
 Module.register("datafeed",{
 
-defaults: {
-	remoteFile: '/home/pi/MagicMirror/modules/datafeed/datatest2.csv'
-},
+	// Default module config.
+	defaults: {
+		remoteFile: "datatest2.csv",
+		updateInterval: 60 * 1000,  // updates every minute
+		initialLoadDelay: 0, // 0 milliseconds delay
+		animationSpeed: 2000
+	},
 
-// Define styles.
-getStyles: function() {
-	return ["datafeed_styles.css"];
-},
+	// Define styles.
+	getStyles: function() {
+		return ["datafeed_styles.css"];
+	},
 
-start: function() {
-	Log.info("starting module: " + this.name);
-	
-}
-getDom: function() {
-	// Read CSV data from text area
-	var data = document.getElementById("remoteFile").value;
+	// Define start sequence.
+	start: function() {
+		Log.info("Starting module: " + this.name);
+		this.loaded = false;
 
-	// Trasform it into array of lines trimming any new lines at the end
-	var output = [],
-	sum = 0;
+		this.scheduleUpdate(this.config.initialLoadDelay);
+	},
 
-	// Iterate over each line
-	lines.forEach(function(line, index) {
-	console.log(line);
-	  console.log(index);
-	  // very first row of the data would become table header row
-		if(index === 0) {
-		output.push("<tr><th>" + line.split("\n").join("</th><th>") + "</th></tr>");
-	  } else {
-	   // rest of the lines would be rows of the table 
-	   output.push("<tr><td>" + line.split("\n").join("</td><td>") + "</td></tr>");
-	   // Sum up 3rd column of the CSV table
-	   sum += parseInt(line.split("\n")[0]);
-	  }
-	});
-	// Wrap it all in table tags
-	output = "<table>" + output.join("") + "</table>";
-	document.getElementById("remoteFile").innerHTML = "Your sum is " + sum.toString();
+	// Override DOM generator.
+	getDom: function() {
+		var wrapper = document.createElement("div");
 
-	// For magic mirror getDom method you probably would end up just appending it to a wrapper and returning it like next 3 commented lines
-	var wrapper = document.createElement("div");
-	wrapper.innerHTML = output;
-	return wrapper;
-	}
+		if (!this.loaded) {
+			wrapper.innerHTML = this.translate("Loading...");
+			wrapper.className = "dimmed light small";
+			return wrapper;
+		}
+
+		wrapper.className = "datafeed";
+		wrapper.innerHTML = "Your sum is " + this.sum;
+		return wrapper;
+	},
+
+	// Process Data that was read from the file.
+	processData: function(data) {
+		// convert our data from the file into an array
+		var lines = data.replace(/\n+$/, "").split("\n");
+		// we have array of strings but need an array of Numbers this should do the trick getting rid of any text and 0 values (source: http://stackoverflow.com/a/26641971)
+		lines = lines.map(Number).filter(Boolean);
+		// now we find the sum of all of the values in our array. (source: http://stackoverflow.com/a/16751601)
+		this.sum = lines.reduce((a, b) => a + b, 0);
+
+		this.loaded = true;
+		this.updateDom(this.config.animationSpeed);
+		this.scheduleUpdate();
+	},
+
+	// Read data from file.
+	updateData: function() {
+		var self = this;
+
+		var xobj = new XMLHttpRequest();
+		xobj.open("GET", this.file(this.config.remoteFile), true);
+		xobj.onreadystatechange = function () {
+			if (xobj.readyState == 4 && xobj.status == "200") {
+				self.processData(xobj.response);
+			}
+		};
+		xobj.send();
+
+	},
+
+	/* scheduleUpdate()
+	 * Schedule next update.
+	 *
+	 * argument delay number - Milliseconds before next update. If empty, this.config.updateInterval is used.
+	 */
+	scheduleUpdate: function(delay) {
+		var nextLoad = this.config.updateInterval;
+		if (typeof delay !== "undefined" && delay >= 0) {
+			nextLoad = delay;
+		}
+
+		var self = this;
+		setTimeout(function() {
+			self.updateData();
+		}, nextLoad);
+	},
+});
